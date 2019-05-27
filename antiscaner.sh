@@ -18,8 +18,8 @@ help()
   echo "-i, --install    Install all components."
   echo "-s, --start      Start protection from ports scanning."
   echo "-u, --uninstall  Remove all and stop protection."    
+  echo "Also you need to run this script as root!"
 }
-
 ### Reset to the defalt options ###
 reset()
 {
@@ -138,6 +138,32 @@ notify()
   fi
 }
 
+install()
+{
+  ### Install ssmtp to send email
+  sudo apt-get install ssmtp
+  echo "\n\nYou need to configure ssmtp-server to get email notification!"
+  echo "Fill in the file /etc/ssmtp/ssmtp.config.\n" 
+
+  ##Configure log of Iptables and log rotation.
+  set_logfile
+  log_rotate
+}
+
+uninstall()
+{
+  delete_task
+  reset
+}
+
+start_protection()
+{  
+  reset
+  set_rules
+  create_task
+}
+
+
 ### Check user to have the root privilegies ###
 ### @retval 0 if user has root privilegies
 ###         1 if not
@@ -165,15 +191,13 @@ do
       parse_log
       ;;
     -s | --start )
-      start
+      start_protection
       ;;
      -u | --uninstall)
       uninstall
       ;;       
   	  -o)
-		set_logfile
-		log_rotate
-		;;
+		;
 	-c)
 	    create_task
 	    ;;
