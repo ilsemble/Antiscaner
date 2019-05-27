@@ -5,11 +5,19 @@ TMP_LIST=$TMP_DIR/tmp_list.log
 IP_LIST=$TMP_DIR/ip_list.log
 LOGFILE="/var/log/iptables.log"
 IPTABLES_SIGN="IPTABLES"
+TASK=$(pwd)/$APPNAME
+
 
 ### Show help ###
 help()
 {
-  echo "help"
+  echo "This scripts provides ports scanning protections."
+  echo "It uses Iptables as the foundation."
+  echo "Usage:"
+  echo "-h, --help       Print this manual."
+  echo "-i, --install    Install all components."
+  echo "-s, --start      Start protection from ports scanning."
+  echo "-u, --uninstall  Remove all and stop protection."    
 }
 
 ### Reset to the defalt options ###
@@ -70,12 +78,14 @@ set_rules()
 
 create_task()
 {
-  task=$(pwd)/$APPNAME
-  (crontab -l; echo "* * * * * "$task" -p") 2> /dev/null | sort | uniq | crontab -
+  (crontab -l; echo "* * * * * "$TASK" -p") 2> /dev/null | sort | uniq | crontab -
 }
 
-TMP_LIST=tmp_list.log
-IP_LIST=ip_list.log
+delete_task()
+{
+  crontab -l | grep -v "$TASK" 2> /dev/null | crontab -
+}
+
 
 send_notify()
 {
@@ -97,7 +107,6 @@ parse_log()
   if [ ! -f "$IP_LIST" ]; then
     touch $IP_LIST
   fi
-  #grep $IPTABLES_SIGN $LOGFILE
   grep -E -o "SRC=([0-9]{1,3}[\.]){3}[0-9]{1,3}" $LOGFILE |\
   grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}" | sort | uniq > $TMP_LIST
 
@@ -113,45 +122,65 @@ parse_log()
 
 notify()
 {
+  ip_list=($@)
+  count=${#ip_list[*]}
   ip_list=("$@")
-  for ip in $ip_list
-  do
-     echo "Your computer was scanned by ip: $ip !"
-     send_notify "Your computer was scanned by ip: $ip !"
-    ##email
-  done
+  if [[ $count -ge 5 ]]; then
+     echo "Your computer was scanned by ip: $ip_list !"
+     send_notify "Your computer was scanned by ip: $ip_list !"
+  else
+    for ip in $ip_list
+    do
+       echo "Your computer was scanned by ip: $ip !"
+       send_notify "Your computer was scanned by ip: $ip !"
+      ##email
+    done
+  fi
+}
+
+### Check user to have the root privilegies ###
+### @retval 0 if user has root privilegies
+###         1 if not
+check_is_sudo()
+{
+  IS_SUDO=$(id -u)
+  if [ $IS_SUDO -ne 0 ] ; then
+    echo "You need to run this script as root!"
+    exit 0
+  fi
 }
 
 
 ### Main ###
-IS_SUDO=$(id -u)
-if [ $IS_SUDO -ne 0 ] ; then
-  echo "You need to run this script as root!"
-  exit 0
-else
-  echo "OK"
-fi
-
 while [ -n "$1" ]
 do
   case "$1" in
-	-o)
+    -h | --help )
+      help
+      ;;
+    -i | --install )
+      install
+      ;;
+    -p )
+      parse_log
+      ;;
+    -s | --start )
+      start
+      ;;
+     -u | --uninstall)
+      uninstall
+      ;;       
+  	  -o)
 		set_logfile
 		log_rotate
 		;;
 	-c)
 	    create_task
 	    ;;
-        -h | --help )
-            help
-       	    ;;
-	-r | --reset)
+-r | --reset)
 	    reset
 	    ;;
-	-p)
-	    parse_log
-	    ;;
-	-s)
+-se)
 	    set_rules
 	    ;;
 #-b) echo "Found the -b option" ;;
