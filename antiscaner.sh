@@ -4,6 +4,9 @@ TMP_DIR=/tmp
 TMP_LIST=$TMP_DIR/tmp_list.log
 IP_LIST=$TMP_DIR/ip_list.log
 LOGFILE="/var/log/iptables.log"
+OLD_CONFIG="/etc/firewall_old.conf"
+CONFIG="/etc/firewall.conf"
+CONFIG_RESTORER="/etc/network/if-up.d/00-iptables"
 IPTABLES_SIGN="IPTABLES"
 TASK=$(pwd)/$APPNAME
 
@@ -110,56 +113,70 @@ parse_log()
   grep -E -o "SRC=([0-9]{1,3}[\.]){3}[0-9]{1,3}" $LOGFILE |\
   grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}" | sort | uniq > $TMP_LIST
 
-  new_ip=$(diff -wB $TMP_LIST $IP_LIST | grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}" )
+  local new_ip=$(diff -wB $TMP_LIST $IP_LIST | grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}" )
   if [ -n "$new_ip" ] ; then
     notify "${new_ip[*]}"
-    echo "$new_ip" >> $IP_LIST
   fi
-  local iptmp=$TMP_DIR/ip.tmp
-  cat $IP_LIST | sort > $iptmp
-  mv $iptmp $IP_LIST
+  mv $TMP_LIST $IP_LIST
 }
 
 notify()
 {
-  ip_list=($@)
-  count=${#ip_list[*]}
   ip_list=("$@")
-  if [[ $count -ge 5 ]]; then
-     echo "Your computer was scanned by ip: $ip_list !"
-     send_notify "Your computer was scanned by ip: $ip_list !"
-  else
-    for ip in $ip_list
-    do
-       echo "Your computer was scanned by ip: $ip !"
-       send_notify "Your computer was scanned by ip: $ip !"
-      ##email
-    done
-  fi
+  mail=$(grep -E -o "\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}\b" /etc/ssmtp/ssmtp.conf)
+  echo "Your computer was scanned by ip:\n $ip_list !"
+  send_notify "Your computer was scanned by ip: $ip_list !"
+  local mail_text=$TMP_DIR/mail.tmp
+  echo "Subject: Antiscaner" > $mail_text
+  echo "" >> $mail_text
+  echo "Your computer was scanned by ip:" >> $mail_text
+  echo "$ip_list" >> $mail_text
+  sendmail -v $mail < $mail_text
+  rm -f $mail_text
 }
 
 install()
 {
   ### Install ssmtp to send email
-  sudo apt-get install ssmtp
+  apt-get install ssmtp
   echo "\n\nYou need to configure ssmtp-server to get email notification!"
-  echo "Fill in the file /etc/ssmtp/ssmtp.config.\n" 
+  echo "Fill in the files /etc/ssmtp/ssmtp.conf and /etc/ssmtp/revaliases\n" 
 
   ##Configure log of Iptables and log rotation.
   set_logfile
   log_rotate
+  
+  iptables-save > $OLD_CONFIG
 }
 
 uninstall()
 {
   delete_task
+  rm -f $CONFIG_RESTORER
+  rm -f $CONFIG
   reset
+  
+  iptables-restore < $OLD_CONFIG
+  
+  rm -f $IP_LIST
 }
 
 start_protection()
-{  
+{ 
+  if [ ! -f "$LOGFILE" ]; then
+    echo "You need to install this program first!"
+    exit 1
+  fi
+   
   reset
   set_rules
+
+  iptables-save > $CONFIG
+
+  echo "#!/bin/sh" > $CONFIG_RESTORER
+  echo "iptables-restore < $CONFIG" >> $CONFIG_RESTORER
+  chmod +x $CONFIG_RESTORER  
+  
   create_task
 }
 
@@ -185,32 +202,23 @@ do
       help
       ;;
     -i | --install )
+      check_is_sudo
       install
       ;;
     -p )
       parse_log
       ;;
     -s | --start )
+      check_is_sudo
       start_protection
       ;;
      -u | --uninstall)
+      check_is_sudo
       uninstall
       ;;       
-  	  -o)
-		;
-	-c)
-	    create_task
-	    ;;
--r | --reset)
-	    reset
-	    ;;
--se)
-	    set_rules
-	    ;;
-#-b) echo "Found the -b option" ;;
-#-c) echo "Found the -c option" ;;
-        *) 
-            echo "Error: bad argument. Use '-h' option to get help" ;;
+     * ) 
+      echo "Error: bad argument. Use '-h' option to get help"
+      ;;
     esac
-    shift
+  shift
 done
