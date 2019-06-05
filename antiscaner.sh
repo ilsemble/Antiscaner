@@ -43,6 +43,7 @@ reset()
 ### Set logfile
 set_logfile()
 {
+  touch $LOGFILE
   local log_config_file="/etc/rsyslog.d/iptables.conf"
   echo ':msg, contains, "'$IPTABLES_SIGN'" -'$LOGFILE > $log_config_file
   echo '& ~' >> $log_config_file
@@ -127,20 +128,22 @@ notify()
   echo "Your computer was scanned by ip:\n $ip_list !"
   send_notify "Your computer was scanned by ip: $ip_list !"
   local mail_text=$TMP_DIR/mail.tmp
-  echo "Subject: Antiscaner" > $mail_text
+  echo "From: Antiscaner <"$mail">" > $mail_text
+  echo "Subject: Antiscaner" >> $mail_text
   echo "" >> $mail_text
   echo "Your computer was scanned by ip:" >> $mail_text
   echo "$ip_list" >> $mail_text
-  sendmail -v $mail < $mail_text
-  rm -f $mail_text
+  /usr/sbin/sendmail $mail < $mail_text 
+  #rm -f $mail_text
 }
 
 install()
 {
   ### Install ssmtp to send email
   apt-get install ssmtp
-  echo "\n\nYou need to configure ssmtp-server to get email notification!"
-  echo "Fill in the files /etc/ssmtp/ssmtp.conf and /etc/ssmtp/revaliases\n" 
+  echo
+  echo "You need to configure ssmtp-server to get email notification!"
+  echo "Fill in the files /etc/ssmtp/ssmtp.conf and /etc/ssmtp/revaliases" 
 
   ##Configure log of Iptables and log rotation.
   set_logfile
@@ -195,9 +198,7 @@ check_is_sudo()
 
 
 ### Main ###
-while [ -n "$1" ]
-do
-  case "$1" in
+case "$1" in
     -h | --help )
       help
       ;;
@@ -211,14 +212,17 @@ do
     -s | --start )
       check_is_sudo
       start_protection
+      echo "Antiscaner is ready. The protection started."
       ;;
      -u | --uninstall)
       check_is_sudo
       uninstall
+      echo "Antiscaner is not active."
       ;;       
+     "" )
+      echo "Use '-h' option to get help"
+      ;;
      * ) 
       echo "Error: bad argument. Use '-h' option to get help"
       ;;
-    esac
-  shift
-done
+esac
